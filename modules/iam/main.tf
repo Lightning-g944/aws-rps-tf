@@ -45,20 +45,3 @@ resource "aws_iam_role_policy_attachment" "logs" {
   role       = aws_iam_role.this.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
-
-resource "aws_iam_role_policy" "lambda_start_glue" {
-  role = aws_iam_role.this.id
-
-  policy = jsondecode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "glue:StartJobRun",
-        "glue:GetJob",
-        "glue:GetJobRun"
-      ]
-      Resource = module.glue.job_arn
-    }]
-  })
-}

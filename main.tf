@@ -15,18 +15,18 @@ provider "aws" {
 
 module "s3" {
   source      = "./modules/s3"
-  bucket_name = "${locals.project}-${locals.env}-data"
+  bucket_name = "${local.project}-${local.env}-data"
 
   tags = {
-    Project = locals.project
-    Env     = locals.env
+    Project = local.project
+    Env     = local.env
   }
 }
 
 module "iam" {
   source = "./modules/iam"
 
-  role_name     = "${locals.project}-${locals.env}-execution-role"
+  role_name     = "${local.project}-${local.env}-execution-role"
   s3_bucket_arn = module.s3.bucket_arn
 }
 
@@ -34,18 +34,18 @@ module "iam" {
 module "sqs" {
   source = "./modules/sqs"
 
-  queue_name = "${locals.project}-${locals.env}-events"
+  queue_name = "${local.project}-${local.env}-events"
 
   tags = {
-    Project = locals.project
-    Env     = locals.env
+    Project = local.project
+    Env     = local.env
   }
 }
 
 module "lambda" {
   source = "./modules/lambda"
 
-  function_name = "${locals.project}-${locals.env}-rps-generator"
+  function_name = "${local.project}-${local.env}-rps-generator"
   role_arn      = module.iam.role_arn
 
   handler  = "app.handler"
@@ -57,6 +57,22 @@ module "lambda" {
   sqs_queue_url = module.sqs.queue_url
 }
 
+module "glue_trigger_lambda" {
+  source = "./modules/lambda"
+
+  function_name = "${local.project}-${local.env}-glue-trigger"
+  role_arn = module.iam.role_arn
+
+  handler = "app.handler"
+  runtime = "python3.10"
+  timeout = 60
+  filename = "./artifacts/Trigger_Gluejob.zip"
+
+  s3_bucket = module.s3.bucket_name
+  sqs_queue_url = module.sqs.queue_url
+  
+}
+
 module "lambda_logs" {
   source = "./modules/cloudwatch"
 
@@ -64,8 +80,8 @@ module "lambda_logs" {
   retention_in_days = 14
 
   tags = {
-    project = locals.project
-    Env     = locals.env
+    project = local.project
+    Env     = local.env
   }
   
 }
@@ -73,7 +89,7 @@ module "lambda_logs" {
 module "glue" {
   source = "./modules/glue"
 
-  job_name = "${locals.project}-${locals.env}-glue-etl" # rps-dev-glue-etl
+  job_name = "${local.project}-${local.env}-glue-etl" # rps-dev-glue-etl
   role_arn = module.iam.role_arn
 
   script_location = "s3://${module.s3.bucket_name}/scripts/etl.py"
@@ -91,6 +107,23 @@ module "glue" {
     "--enable-monitoring"               = "true"
     "--s3-bucket-location"              = "${module.s3.bucket_name}"
   } 
+}
+
+resource "aws_iam_role_policy" "lambda_start_glue" {
+  role = module.iam.role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "glue:StartJobRun",
+        "glue:GetJob",
+        "glue:GetJobRun"
+      ]
+      Resource = module.glue.job_arn
+    }]
+  })
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_to_glue_lambda" {
